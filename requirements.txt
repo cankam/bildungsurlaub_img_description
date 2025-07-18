@@ -1,0 +1,7 @@
+grpcio-status==1.73.1
+langchain-google-genai==2.1.8
+langchain-groq==0.3.6
+pip==23.2.1
+python-dotenv==1.1.1
+setuptools==65.5.0
+streamlit==1.47.0
