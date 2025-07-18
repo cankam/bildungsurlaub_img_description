@@ -1,0 +1,134 @@
+import streamlit as st
+from PIL import Image
+import io
+import base64
+import os # Wird weiterhin für os.path.exists (für .env) benötigt, aber nicht für Dateispeicherung
+from pydantic import BaseModel
+from dotenv import load_dotenv, find_dotenv
+
+# Importe für Langchain und Google Generative AI
+from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.output_parsers import SimpleJsonOutputParser
+
+# Lädt Umgebungsvariablen aus einer .env-Datei (z.B. für API-Schlüssel)
+load_dotenv(find_dotenv(usecwd=True))
+
+# Streamlit Seitenkonfiguration
+st.set_page_config(
+    page_title="Bildanalyse und Uploader (Ohne Datenbank)",
+    page_icon="🖼️",
+    layout="centered"
+)
+
+st.title("🖼️ Bilder hochladen, analysieren und anzeigen (Ohne Datenbank)")
+st.write("Laden Sie hier Ihre JPG-Bilder hoch. Die App analysiert sie mit KI und zeigt die extrahierten Daten direkt an. Die Bilder selbst und die extrahierten Daten werden **nicht dauerhaft gespeichert**.")
+
+# Initialisierung des LLM-Modells
+# Stellen Sie sicher, dass Ihr GOOGLE_API_KEY in der .env-Datei gesetzt ist oder als Umgebungsvariable verfügbar ist.
+model = ChatGoogleGenerativeAI(model="gemini-1.5-flash")
+
+#### Felder für die Bildextraktion ####
+class MyPictureOutput(BaseModel):
+    """Pydantic-Modell für die Struktur der LLM-Ausgabe."""
+    title: str
+    buildings: str
+    description: str
+
+def encode_image_from_bytes(image_bytes):
+    """Kodiert Bild-Bytes in Base64 für die LLM-Eingabe."""
+    return base64.b64encode(image_bytes).decode('utf-8')
+
+# Dateiuploader für mehrere Bilder
+uploaded_files = st.file_uploader(
+    label="Wählen Sie ein oder mehrere JPG-Bilder aus",
+    type=["jpg", "jpeg"],
+    accept_multiple_files=True,
+    help="Sie können mehrere Bilder gleichzeitig auswählen."
+)
+
+if uploaded_files:
+    st.subheader("Ihre hochgeladenen Bilder und Analyseergebnisse:")
+    # Erstelle ein Raster für die Anzeige der Bilder
+    cols = st.columns(4)
+
+    for i, uploaded_file in enumerate(uploaded_files):
+        # Zeige das Bild im Raster an
+        with cols[i % 4]: # Verteilt die Bilder auf die Spalten
+            # PIL.Image.open kann direkt mit BytesIO arbeiten
+            image = Image.open(io.BytesIO(uploaded_file.read()))
+            st.image(image, caption=uploaded_file.name, use_column_width=True)
+
+            # Setze den Stream-Pointer zurück, damit .read() später erneut verwendet werden kann
+            # (Wichtig, wenn uploaded_file.read() mehrmals aufgerufen wird, z.B. für LLM und Anzeige)
+            uploaded_file.seek(0)
+
+        # Verarbeite das Bild mit dem LLM
+        with st.spinner(f"Analysiere '{uploaded_file.name}'..."):
+            try:
+                # Lese die Bild-Bytes direkt aus dem hochgeladenen Objekt
+                image_bytes = uploaded_file.read()
+                base64_image = encode_image_from_bytes(image_bytes)
+
+                # Prompt-Template für die Bildanalyse
+                prompt = ChatPromptTemplate.from_messages(
+                    [
+                        (
+                            "system",
+                            "Sie sind ein Experte für die Analyse von Bildern. "
+                            "Extrahieren Sie den Titel, die Gebäude und eine Beschreibung aus dem Bild. "
+                            "Antworten Sie mit einem JSON-Objekt mit den folgenden Schlüsseln: title, buildings, description.",
+                        ),
+                        (
+                            "human",
+                            [
+                                {"type": "text", "text": "Beschreiben Sie das Bild."},
+                                {
+                                    "type": "image_url",
+                                    "image_url": f"data:image/jpeg;base64,{base64_image}",
+                                },
+                            ],
+                        ),
+                    ]
+                )
+
+                # Parser für die JSON-Ausgabe des LLM
+                parser = SimpleJsonOutputParser(pydantic_object=MyPictureOutput)
+                chain = prompt | model | parser
+
+                # LLM aufrufen und Daten extrahieren
+                extracted_data = chain.invoke({})
+
+                st.success(f"Bild '{uploaded_file.name}' wurde analysiert.")
+
+                # Zeige die extrahierten Daten direkt unter dem Bild an
+                with cols[i % 4]:
+                    # Geänderter Zugriff auf Dictionary-Elemente
+                    st.markdown(f"**Titel:** {extracted_data['title']}")
+                    st.markdown(f"**Gebäude:** {extracted_data['buildings']}")
+                    st.markdown(f"**Beschreibung:** {extracted_data['description']}")
+                    st.markdown("---") # Trennlinie
+
+            except Exception as e:
+                st.error(f"Fehler bei der Analyse von '{uploaded_file.name}': {e}")
+
+else:
+    st.info("Bitte laden Sie JPG-Bilder hoch, um sie hier zu analysieren und anzuzeigen.")
+
+# Benutzerdefinierte CSS-Stile für die Streamlit-App
+st.markdown(
+    """
+    <style>
+    .reportview-container .main .block-container {
+        padding-top: 2rem;
+        padding-right: 2rem;
+        padding-left: 2rem;
+        padding-bottom: 2rem;
+    }
+    .stFileUploader {
+        margin-bottom: 20px;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
