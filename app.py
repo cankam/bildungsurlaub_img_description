@@ -2,19 +2,18 @@ import streamlit as st
 import io
 import sqlite3
 import base64
-import os
 from pydantic import BaseModel
-from dotenv import load_dotenv, find_dotenv
 from PIL import Image # Import von PIL.Image
-
-load_dotenv(find_dotenv(usecwd=True))
+import os
+# from dotenv import load_dotenv, find_dotenv
+# load_dotenv(find_dotenv(usecwd=True))
 
 # model
-from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_groq import ChatGroq
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import SimpleJsonOutputParser
 
-model = ChatGoogleGenerativeAI(model="gemini-1.5-flash")
+model = ChatGroq(model="meta-llama/llama-4-maverick-17b-128e-instruct")
 
 #### database
 DB_FILE = "buildings.db"
@@ -118,9 +117,10 @@ if uploaded_files:
                     [
                         (
                             "system",
-                            "You are an expert at analyzing images. "
-                            "Extract the title, buildings, and a description from the image. "
-                            "Respond with a JSON object with the following keys: title, buildings, description.",
+                            "You are an expert at analyzing images."
+                            "Extract the title, buildings, and a description from the image."
+                            "Respond with a JSON object with the following keys: title, buildings, description."
+                            "For each key (title, buildings, description) you only give a single short line of text. You never use nested JSON objects."
                         ),
                         (
                             "human",
@@ -175,3 +175,5 @@ if os.path.exists(DB_FILE):
             file_name="buildings.db",
             mime="application/octet-stream"
         )
+
+# %%
